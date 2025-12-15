@@ -1,0 +1,575 @@
+# ST Loan Management System (ST Main) - General Requirements
+
+Last updated: 2025-11-19  
+Owner: Engineering  
+Status: Draft (derived from codebase analysis; expand with SME validation)
+
+## 1. Purpose and Scope
+- Define what the ST Loan Management System (LMS) must deliver to lenders, credit teams, operations, and compliance.
+- Covers the WinForms desktop application and supporting services: Notification service, Board Report Scheduler, OCR/AI extraction pipeline, external integrations (Credit Bureau, ComplianceOne, Square1 Portal, mobile TCP).
+- Excludes pixel-level UX specs and exhaustive class-by-class documentation (see `main/gene.md` for architecture depth and traceability).
+
+## 2. Stakeholders and Users
+- Primary: loan officers, credit analysts, documentation/exception specialists, branch staff, portfolio managers.
+- Secondary: executive/board reporting users, compliance/risk officers, auditors, mobile/portal users.
+- Supporting roles: IT/operations for deployment, configuration, licensing, monitoring, backups, and DR.
+
+## 3. System Overview
+- Platform: Windows desktop MDI application on .NET Framework 4.8 with SQL Server backend.
+- Configuration: INI-driven (primary) plus limited `app.config`; licensing and feature gating via PassNet product types.
+- Data access: SqlClient (preferred) and OLE DB (legacy) managed via `cApp`; dual connection strings for LMS and Board Reports DB.
+- Document ingestion: ABBYY FineReader Server (OCR) and Azure Document Intelligence (AI PDF extraction).
+- Services: Windows services for Notification scheduling and Board Report scheduling.
+
+## 4. Capability Map (modules and major behaviors)
+- Shell/Navigation: splash, MDI shell, toolbars/outbars/tree navigation, status area.
+- Authentication/SSO and licensing enforcement.
+- Customers: search, view, create; display related loans, deposits, documents, notes, memos, follow-ups.
+- Loans: create/edit/view loans, terms, narratives, presentations; link collateral and exceptions.
+- Collateral: manage collateral records, documentation, and loan linkage.
+- Deposits: manage deposit accounts (checking/savings/CD), balances, rates, transactions, imports/reconciliation.
+- Documentation Tracking: manage documentation items, criteria, reassignment, and exception handling with counts/status.
+- Notes and Memos: create/manage with author/timestamp audit.
+- Letters/Templates: compose and print letters using templates (TX Text Control); customer/group generation.
+- Reports (C1 FlexReport) and Dashboards: run parameterized reports, queue jobs, and view metrics dashboards.
+- Follow-up/Tasks and Notifications: reminders/tasks with due dates; email notifications via scheduler.
+- Lookups and Configuration: admin UI for lookup tables and system options (paths, flags, timeouts).
+- Financial Analysis (FA): spread-like analysis features per FA module.
+- Board Reports (BR): generate board reports (Past Due, Non-Accrual, One Obligor, etc.) against separate BR DB.
+- Schedulers/Services: Notification scheduler and BR scheduler (Windows services) with configurable frequency.
+- Integrations: Credit Bureau requests, ComplianceOne file exchange, Square1 Portal access, mobile app TCP interface (ports 5000-5100).
+- OCR/AI Extraction: ABBYY OCR; Azure Document Intelligence for tax form extraction with XML mapping to internal codes.
+- Additional modules in solution (coverage)
+  - Util: configuration loader, feature flags, connection strings, version check, paths, logging.
+  - Data: OLE DB helper and SQL helpers (legacy paths); requirements to prefer SqlClient for new work.
+  - Error: centralized error handling with dialogs and optional Event Log/SMTP logging.
+  - Controls/LAControls/Graphics: shared WinForms controls and resources; ensure runtime availability.
+  - Lookup: management of lookup tables and code lists.
+  - Configure: system configuration UI; must validate paths, credentials, ports, and feature flags.
+  - Dashboards: summary views fed by SQL queries; must respect licensing and performance budgets.
+  - FollowUp: task/reminder workflows tied to customers/loans with notifications.
+  - FA/FA_Conv_RMA: financial analysis and conversion utilities; ensure spread templates/paths exist.
+  - SDI: SDI-specific functionality gated by license bit.
+  - PassNet: licensing/feature gating; enforce on startup and module entry.
+  - LMSImport: import utilities for LMS data; handle idempotency and validation.
+  - ConfigSMTP: SMTP configuration helper; validate connectivity before enabling notifications.
+  - NotificationTester: test harness for notification flows; isolate from production mail targets.
+  - PdfExtractorAI: AI PDF extraction pipeline; secure keys, map outputs to internal codes.
+  - RTF: rich text utilities used by letters/templates.
+  - BR/BRTestGen/BRSchedule: board report generation, testing, and scheduling service.
+  - Square1Portal: portal integration; respect licensing/config.
+  - UDLMS_Net: network utilities for distributed/mobile integration.
+  - ThirdPartyDLL: vendor DLLs; ensure correct versions and licenses at runtime.
+
+## 5. Out of Scope
+- Non-Windows clients; cloud-native rewrite; UX redesign; migration to PackageReference or .NET greater than 4.8 (tracked separately).
+
+## 6. Detailed Functional Requirements
+- Authentication and session
+  - Attempt SSO on startup; fall back to credential dialog when SSO fails.
+  - Establish user identity, permissions, and licensed feature flags prior to showing the shell.
+  - Retain user context for auditing in downstream actions.
+- Licensing and feature gating
+  - Validate PassNet product type on startup; disable or hide gated modules when unlicensed.
+  - Fail closed on invalid/expired license with clear remediation messaging.
+- Shell and navigation
+  - Splash followed by MDI shell with consistent theming, icons, toolbars, and navigation trees/outbars.
+  - Fast module switching; long operations must run on background workers to avoid UI blocking.
+- Customer management
+  - Search/filter customers; open profiles with summary and related data.
+  - Create new customers with required validations; persist to SQL Server.
+  - Show related loans, deposits, documents, notes, memos, follow-ups in context.
+  - Support de-duplication checks (name/tax ID) when creating new customers.
+- Loans and collateral
+  - Create/edit/view loans (terms, rates, covenants, narratives) and presentation data.
+  - Link collateral; maintain loan-to-collateral relationships and status.
+  - Track exceptions tied to loans and collateral.
+  - Support loan presentation data and review notes for credit packages.
+- Deposits
+  - Manage deposit account lifecycle; display balances, rates, transaction history.
+  - Support configured imports/reconciliation; flag discrepancies/exceptions.
+- Documentation Tracking (DT)
+  - Define documentation items and criteria; assign, reassign, and close exceptions.
+  - Display counts/status per customer/loan; drill into detail and history.
+  - Provide reassignment flows with audit trail.
+- Notes and memos
+  - Create/manage notes and memos linked to customers/loans.
+  - Persist author and timestamp for audit visibility.
+- Letters and templates
+  - Compose letters using templates; merge customer/group data; print/export via TX Text Control.
+  - Manage template selection and storage.
+- Reports and dashboards
+  - Run parameterized C1 FlexReports; support job queueing for long-running reports.
+  - Dashboards summarize KPIs and allow navigation to detail forms.
+- Follow-up and notifications
+  - Create follow-up tasks/reminders with due dates, owners, and statuses.
+  - Notification scheduler sends emails based on configured rules; track send status and retries.
+- Lookups and configuration
+  - Administer lookup tables and system options (paths, flags, timeouts, ports) through UI where applicable.
+  - Persist configuration changes with validation and audit.
+- Financial Analysis (FA)
+  - Provide spread-like analysis and calculations (as implemented in FA module).
+  - Allow saving and retrieving analyses tied to customers/loans.
+- Board reports (BR)
+  - Generate board reports (Past Due, Non-Accrual, One Obligor, others) using BR DB connection.
+  - Schedule automated generation via BR scheduler; configure frequency, parameters, and output location.
+- External integrations
+  - ComplianceOne: exchange files via configured input/output paths.
+  - Credit Bureau: submit requests and process responses; respect product gating.
+  - Square1 Portal: enable access per licensing/config.
+  - Mobile app: TCP server listening on configured port range (default 5000-5100).
+- Document ingestion and AI extraction
+  - ABBYY OCR processing using INI-defined input/output paths; handle demo/beta flags.
+  - AI extraction for tax forms (Schedules L, E1/E2, 8825-1/2) via Azure Document Intelligence.
+  - Produce XML mapped to Suntell codes; handle multi-page and repeated sections; fall back to OCR results if AI fails.
+  - Store temporary extraction files in a controlled directory; clean up after processing.
+- Upgrade and version check
+  - On startup, compare client build with database version; prompt MSI update from configured share on mismatch.
+  - Environment selection for MSI update uses processor architecture (`x64`/`x86`); ensure both MSI paths exist or gate prompt accordingly.
+
+## 7. Data Model Expectations (logical)
+- Customer: core identity, contact, tax ID; relationships to Loan, Deposit, DocItem, Note, Memo, FollowUp.
+- Loan: terms, rates, covenants, narratives, presentation; relations to Customer, Collateral, DocItem, Note, Memo, FollowUp.
+- Collateral: type, value, documents, linkage to one or more Loans.
+- Deposit: account type, balance, rate, transaction history; linkage to Customer.
+- DocItem (DT): item definition, required/optional flag, status, assigned user, due date, exception status/history.
+- Note/Memo: content, author, timestamp, linked entity (Customer/Loan), visibility rules.
+- FollowUp/Task: due date, owner, status, linked entity, notification flags.
+- ReportJob/Queue: report id, parameters, status, output path, timestamps.
+- NotificationSchedule: trigger type, recipients, schedule, last run, status.
+- BoardReportJob: report type, parameters, schedule, output path, BR DB connection.
+- AIExtractionRun/OCRJob: source file, type (ABBYY/AI), output XML path, status, error details, timestamps.
+
+## 7. Cross-Cutting Behaviors
+- Startup order: splash -> load configuration -> license check -> DB connectivity check -> version check -> SSO/login -> load MDI.
+- Configuration load: INI for SQL, BR SQL, OCR, ComplianceOne, TCP; appSettings for AI endpoints/keys.
+- Error handling: centralized handler shows dialog; optional Windows Event Log entry and SMTP notification.
+- Data access: prefer SqlClient (`cApp.SqlClConString`); legacy OLE DB via `cApp.OleDbConString`/`cData` is still present.
+- Background work: long-running tasks (reports, imports, AI extraction) use background workers to keep UI responsive.
+
+## 8. Non-Functional Requirements
+- Performance
+  - Splash-to-shell target: under ~5 seconds on supported hardware/network; clearly indicate loading state.
+  - Common searches and navigation should not block UI; long tasks must be asynchronous with progress/feedback (progress bar/status text).
+  - Report generation and AI/OCR tasks should queue without freezing the shell; show completion/failure state.
+- Reliability and availability
+  - Graceful failure with clear user messaging; avoid unhandled exceptions.
+  - Notification and BR scheduler services run unattended with retries/backoff where applicable.
+  - Persist job state for schedulers to avoid duplicate sends/runs after restart where practical.
+- Security
+  - Enforce licensing/feature gating before enabling modules.
+  - Prefer encrypted SQL connections; no plaintext secrets in source control; protect API keys and credentials.
+  - Apply least privilege for DB access; avoid unnecessary local storage of sensitive data.
+  - Obfuscate or mask sensitive fields in UI/logs where applicable.
+- Maintainability
+  - Centralize configuration and connection handling; new data access via SqlClient only.
+  - Reduce `frmMDI` coupling by isolating navigation/background task services over time.
+- Compatibility
+  - Windows with .NET Framework 4.8; SQL Server reachable per INI.
+  - Third-party licensed components present at runtime (ComponentOne, TX Text Control, ABBYY, Spread).
+- Usability
+  - Consistent WinForms patterns; clear status/error indicators; avoid blocking dialogs unless user action is needed.
+- Observability
+  - Central logging with timestamps/context; optional Windows Event Log and SMTP alerts.
+  - Trace attempts and failures for AI extraction and OCR pipeline.
+
+## 9. Data and Configuration Requirements
+- SQL (LMS): server, catalog, auth type (Windows/SQL), timeout, provider; encryption preferred.
+- SQL (Board Reports): separate connection/credentials for BR DB.
+- OCR: input/output paths; demo and beta flags.
+- ComplianceOne: input/output paths.
+- TCP: port range start/end for mobile app connectivity (default 5000-5100).
+- AI extraction: Azure Document Intelligence endpoint/key loaded securely (not stored in plaintext).
+- Feature flags: PassNet product types (Enterprise, SDI, Upload, Dashboards, Credit Bureau, etc.).
+- Versioning: client vs database version values; shared path for MSI updates.
+- Licensing: validate on startup; block gated modules when invalid.
+- Logging: toggle verbose/debug logging; configure Event Log source and SMTP settings where enabled.
+
+## 10. External Dependencies (selected)
+- UI/Reporting: ComponentOne WinForms libraries (commands, navigation, FlexReport).
+- Document/Letters: TX Text Control.
+- OCR: ABBYY FineReader Server.
+- AI: Azure Document Intelligence.
+- Grids/Spreadsheets: GrapeCity Spread for WinForms.
+- Icons/Support: FontAwesome.Sharp; System.* backport packages.
+
+## 11. Deployment and Operations
+- Packaging: client-installed WinExe; MSI update prompt from configured share when version mismatch is detected.
+- Build: NuGet restore via `packages.config`; ensure third-party runtime licenses are available to build/runtime.
+- Services: Notification scheduler and BR scheduler run as Windows services; configurable schedules, logging, and error reporting.
+- Configuration management: INI files per environment; secrets in secure store or environment variables; do not commit keys.
+- DR/backup: SQL Server backups handled by DBA; configuration files and license assets backed up with deployment artifacts.
+- Logging/monitoring: enable Event Log where permitted; capture scheduler job outcomes; monitor AI/OCR failures and retries.
+- Ops runbooks: include steps to rotate keys, update INI paths, restart services safely, and validate Event Log permissions.
+- Update flow: document MSI distribution share, version check logic, and rollback steps if update fails.
+- Ops runbook details (fill with environment-specific paths/servers)
+  - Key rotation (Azure Document Intelligence)
+    - Retrieve new key from Azure portal (Document Intelligence resource).
+    - Store new key in secure location (Key Vault/secret manager); set env var `AZURE_DOCUMENT_INTELLIGENCE_KEY` on app and scheduler hosts; avoid app.config plaintext.
+    - If encryption-at-rest is required, encrypt with existing AES routine (see `IntelligentPdfExtractor.GetDecryptedKey`) before writing to secure store; document IV/ciphertext location.
+    - Update endpoint/key in deployment vault; record change ticket; restart app clients/services to pick up env var.
+    - Verify by running a sample AI extraction and checking logs for successful call.
+  - Service restart (Notification, BR Scheduler)
+    - Identify service names (e.g., `ST.NotificationScheduler`, `ST.BRSchedule`); note service account.
+    - Graceful stop: `sc stop <ServiceName>`; wait for `STATE: STOPPED` or timeout procedure.
+    - Start: `sc start <ServiceName>`; verify status and Event Log entries; confirm next scheduled job timestamp.
+    - If config/INI changed, validate paths/credentials before start; capture pre/post status in change log.
+  - Update rollback (client MSI)
+    - Keep previous MSI/build in versioned share (e.g., `\\<share>\ST\releases\<version>`).
+    - If new client prompts update and fails, instruct users to rerun prior MSI; restore prior INI if it changed.
+    - Database version: if schema migration accompanied update, coordinate with DBA for rollback/backup restore; otherwise block downgrade until DB is compatible.
+    - Post-rollback, run smoke (startup, login, open Customers/Loans/Reports) and record version in change log.
+  - Environment specifics filled from repo defaults
+    - INI chain: app INI (`ST.Main.INI`) -> `[LMS] SUNINI` = `C:\Program Files (x86)\Suntell\Suntell.ini` -> `[LMS] BACKEND` = `C:\Program Files (x86)\Suntell\`. BACKEND hosts MSI folders and documentation.
+    - MSI location: `C:\Program Files (x86)\Suntell\MSI\<ENV>\STLMS.msi` where `<ENV>` is auto-set to `x64` or `x86` based on `PROCESSOR_ARCHITECTURE`. (Code: `m_LMSDatabaseFolder + "MSI\\{env}\\STLMS.msi"`.)
+    - Service display names: Notification = `Suntell Notification Service`; Board Reports = `Suntell Data Aggregation Service`. Installer sets service name prefixes `STNotificationScheduler ` / `STDAScheduler ` plus config value; verify with `sc query state= all ^| findstr /I Suntell`.
+    - Restart command examples: `sc stop "Suntell Notification Service"` then `sc start "Suntell Notification Service"`; same for `"Suntell Data Aggregation Service"`.
+    - Event Log source: confirm source names in Event Viewer after restart; ensure service account can write.
+    - Update rollback checklist: use `C:\Program Files (x86)\Suntell\MSI\<ENV>\` to rerun prior `STLMS.msi`; restore prior `ST.Main.INI` / `Suntell.ini` if changed; verify client version (Help > About or file properties).
+    - If your deployment uses a network backend instead of local `C:\Program Files (x86)\Suntell\`, set `[LMS] BACKEND` in `Suntell.ini` to the UNC share (e.g., `\\fileserver\ST\backend\`) and mirror the MSI folder layout (`MSI\x64\STLMS.msi`, `MSI\x86\STLMS.msi`). Confirm share permissions for install/update and service accounts.
+
+## 12. Compliance, Audit, and Data Handling
+- Protect PII/financial data in transit and at rest (DB encryption where possible).
+- Audit trails: capture user, timestamp, and action for key events (login, create/edit loan, notes/memos, document actions).
+- Retention: follow institutional policy for notes/memos/documents; purge temporary OCR/AI outputs after processing or on schedule.
+- Access control: respect Windows/SQL auth and licensing; restrict administrative configuration functions to authorized roles.
+- Evidence: ensure reports/exports that leave the system include generation metadata (user, time, parameters).
+
+## 13. Testing and Acceptance
+- Smoke: startup (splash -> license -> DB check -> version check -> SSO/login -> MDI), open core modules (Customers, Loans, Reports).
+- Functional: create/edit customer and loan, link collateral, add notes/memos, run report, generate letter, create follow-up, process DT exception.
+- Integrations: AI extraction with sample PDFs; ABBYY OCR path test; ComplianceOne file exchange; Credit Bureau request/response; BR generation; Notification email send.
+- Upgrade: simulate version mismatch and confirm MSI prompt flow and recovery.
+- Security: license gating enforcement; secrets resolved from secure source; SQL connection encryption where configured.
+- Performance: measure splash-to-shell and typical search/report latencies against targets; ensure background tasks do not freeze UI.
+- Regression: cover core workflows after configuration changes (INI edits, license changes, version updates).
+
+## 14. Risks, Assumptions, and Recommendations
+- Risks
+  - Secrets in `app.config` (Azure Document Intelligence) risk exposure.
+  - OLE DB usage increases complexity and maintenance overhead.
+  - SQL encryption disabled in some connection strings.
+  - Large `frmMDI` coupling slows change and testing.
+  - Third-party license gaps can break build/runtime.
+- Assumptions
+  - SQL Server reachable with required permissions; Event Log write permission where enabled.
+  - ABBYY, ComponentOne, TX Text Control, and other licensed runtimes are deployed and valid.
+  - Network paths for updates, OCR, ComplianceOne are accessible from clients/services.
+- Recommendations
+  - Move secrets to environment/secure store; remove plaintext keys from source control.
+  - Standardize on SqlClient for new work and plan OLE DB migration.
+  - Enable SQL encryption with trusted certificates; validate encryption on connect.
+  - Incrementally refactor `frmMDI` toward navigation/task services and smaller responsibilities.
+  - Document and verify third-party license deployment steps; add health checks for schedulers and notifications.
+
+## 15. Module Notes and Edge Cases
+- Shell/MDI: guard against missing config or failed license check; disable modules when their dependencies (SQL/paths) are unavailable.
+- Util/Data/Error: fail fast on missing INI paths; surface connection string/provider errors; ensure Event Log/SMTP fallback does not block UI.
+- Loans: ensure rate/term validations, covenant tracking, and presentation exports handle missing collateral gracefully; prevent edits on locked/approved loans when business rules require.
+- Deposits: reconcile imports with duplicate detection; handle partial files and reruns idempotently.
+- Documentation Tracking: reassignment must preserve audit trail; counts should exclude closed items when configured; allow bulk updates with confirmation.
+- Board Reports (BR): use separate BR DB; handle schedule collisions and long-running report timeouts; store outputs to configured path with overwrite/versioning rules.
+- Notifications: throttle retries to avoid mail storms; surface SMTP failures; respect quiet hours if configured.
+- PdfExtractorAI: verify Azure endpoint/key availability; fall back to ABBYY OCR when AI fails; log per-file outcomes; clean temp XML; handle multi-occur tables and page-specific sections.
+- Credit Bureau: gate by license; capture request/response status; avoid storing sensitive SSNs in logs; handle bureau downtime with retries/backoff.
+- Configure/Lookup: validate paths and numeric ranges; protect admin screens with role/license checks.
+- Dashboards/Reports: parameter validation; prevent unbounded queries; show progress on long runs.
+- Custom Templates: validate template existence and access rights; handle missing TX Text Control resources.
+- PassNet/LAControls: ensure product type maps to correct feature flags; block gated UI elements when unlicensed.
+- LMSImport: validate file formats; support dry-run where possible; ensure imports are transactional/idempotent to avoid duplicates.
+- ConfigSMTP/NotificationTester: test connectivity without sending to production recipients; secure SMTP credentials and avoid logging passwords.
+- UDLMS_Net/mobile TCP: validate port range availability; secure channel if sensitive data flows; rate-limit or authenticate connections.
+
+## 16. Security and Privacy Controls (expanded)
+- Authentication: prefer SSO; credential prompt only when SSO fails; lock down admin/config screens by role/licensing.
+- Secrets: load Azure Document Intelligence key from secure store/env; avoid plaintext in app.config; if encryption-at-rest is used, document IV/ciphertext handling.
+- Transport: prefer SQL encryption; avoid `TrustServerCertificate=true` unless accompanied by cert validation plan.
+- Data in UI/logs: mask SSN/TIN and other sensitive fields; avoid logging raw bureau responses or AI/OCR content.
+- Filesystem paths: restrict OCR/AI temp paths to secured locations; enforce NTFS ACLs for service accounts.
+- Licensing: fail closed when PassNet product check fails; log reason codes.
+- Patching: ensure third-party components (ComponentOne, TX Text Control, ABBYY) are patched per vendor guidance.
+
+## 17. Performance and Capacity Targets
+- Startup: splash-to-shell under ~5 seconds on supported hardware/network; log startup timing.
+- Searches: customer/loan/deposit searches return in under ~2 seconds for typical indexed queries; index tuning required if exceeded.
+- Reports: common reports under ~10 seconds; long/board reports may queue but must provide progress/status.
+- AI/OCR: single-document extraction completes within acceptable SLA (define per environment); queue concurrent jobs to avoid resource exhaustion.
+- Background tasks: notification and BR schedulers should recover from restart without duplicate sends/runs where state is tracked.
+
+## 18. Monitoring and Alerting
+- Service health: Notification and BR scheduler running state; last successful run timestamp; consecutive failure counts.
+- Jobs: report/notification/board report job failures; AI/OCR extraction failures; queue backlog size.
+- Connectivity: DB connectivity checks; OCR/ComplianceOne path availability; SMTP availability.
+- Licensing/version: license nearing expiry; version mismatches prompting MSI; excessive skip-ver-check usage.
+- Logs: error rates and unhandled exceptions; Event Log write failures; disk space for logs/output/temp.
+
+## 19. Data Retention and Housekeeping
+- Temp OCR/AI files: purge after processing (per day or job) to avoid disk bloat.
+- Logs: rotate and cap size; set retention aligned to institutional policy.
+- Reports/exports: retain per compliance policy; include generation metadata.
+- Notifications: keep send history sufficient for audit; consider pruning after policy window.
+
+## 20. Environment and Release Management
+- Environments: document DEV/TEST/UAT/PROD backend paths, SQL servers/catalogs, and MSI share locations (x64/x86).
+- Versioning: record client version, DB version, and MSI path per environment; verify on startup.
+- Change control: require change ticket for INI/app.config edits, key rotations, and service restarts; record pre/post versions.
+- Validation: smoke test after deploy/update (startup/login/core modules); include AI/OCR and scheduler spot checks where applicable.
+
+## 21. Known Gaps / Technical Debt Backlog
+- Secrets in app.config for Azure Document Intelligence need relocation to secure store/env.
+- OLE DB paths remain; migrate to SqlClient.
+- SQL encryption often disabled; enable with trusted certs.
+- Monolithic `frmMDI` limits maintainability; refactor navigation/background task responsibilities into services.
+- packages.config across projects; consider PackageReference migration.
+- Limited structured logging; consider introducing structured logger (e.g., Serilog) with rolling files and Event Log sinks.
+
+## 22. Acceptance and QA Traceability
+- Map each functional area to test cases: authentication/licensing, navigation, customers/loans/collateral, deposits, DT, notes/memos, letters, reports/dashboards, follow-ups/notifications, board reports, integrations, AI/OCR, upgrades.
+- Define pass/fail criteria per area (e.g., license gating blocks unlicensed modules; AI extraction outputs expected XML schema).
+- Include negative tests: invalid config paths, DB offline, license invalid, SMTP unreachable, OCR path missing, AI key missing/invalid, MSI update declined.
+
+## 23. Module-Specific Detailed Requirements
+- Customers
+  - Search by name/ID/tax ID with indexed fields; support partial/phonetic search if configured.
+  - Create/edit with required field validation (name, tax ID where used); enforce dedup on tax ID/name+address per institution policy.
+  - Show related loans, deposits, DT exceptions, notes/memos, follow-ups; support navigation from related items back to customer.
+  - Audit all create/update/delete with user/time; hide sensitive identifiers in UI/logs.
+  - Required data points: legal name, customer type, tax ID (if collected), primary address/phone/email, risk/relationship officer fields where present.
+  - Quality rules: tax ID checksum (if SSN/EIN), phone/email format, mandatory country/state/province codes aligned to lookup tables.
+  - KYC/identification: capture identification doc type/number/expiry if required; store customer risk rating if present.
+  - Flags/segments: support customer categories (e.g., commercial/consumer/ag) and segment filters for reports.
+- Loans and Collateral
+  - Maintain loan core data (terms, rates, risk ratings, covenants, narratives, presentation pages).
+  - Link multiple collateral items; enforce collateral coverage rules where configured; keep history of changes.
+  - Support lock states for approved/boarded loans; restrict edits when locked.
+  - Provide export/print of loan presentations; handle missing collateral gracefully.
+  - Validate numeric ranges (LTV, rates, terms) and effective dates.
+  - Calculations: LTV, DSCR, payment schedules as implemented; ensure rounding consistency; prevent divide-by-zero.
+  - Status lifecycle: draft -> in review -> approved/boarded -> locked; log user and timestamp on transitions.
+  - Covenant tracking: capture covenants, due dates, compliance status, and attach evidence docs where required.
+  - Fees/escrow: if captured, validate amounts and accrual rules; tie to payment schedules where applicable.
+  - Renewals/mods: support renewal/modification workflows where present; preserve prior terms in history.
+  - Collateral detail: type-specific fields (real estate, vehicles, UCC filings); track valuations/appraisals with dates and sources.
+- Deposits
+  - Manage account metadata, balances, rates, transaction summaries; tie to customers.
+  - Import/reconcile files with idempotency and duplicate detection; log rejects with reasons.
+  - Respect product/licensing flags if deposits are gated.
+  - Validate account number formats; enforce uniqueness per institution; support rate change history if present.
+  - Interest: capture interest calculation method/frequency; ensure posted vs accrued distinction if shown.
+  - Holds/flags: display holds/restrictions if present in data feed; show last activity dates.
+- Documentation Tracking (DT)
+  - Define required/optional items per product/loan type; track status, due dates, owner.
+  - Support reassignment with audit, bulk close/waive with confirmation, and exception aging views.
+  - Counts and dashboards should reflect filters (open vs closed) and respect permissions.
+  - Enforcement: block downstream workflow if required docs are missing (where business rules dictate); configurable grace periods.
+  - Reassignment reasons required; capture note on waivers/overrides.
+  - Templates: allow doc requirement templates by product/loan type; apply automatically on new loans/customers.
+  - SLAs: due date calculations based on event triggers (e.g., boarding date); aging buckets for reporting.
+- Notes and Memos
+  - Create/view/edit with author/time; support visibility scope (internal vs external if applicable).
+  - Prevent deletion without audit; optionally soft-delete.
+  - Formatting: allow plain/Rich Text per implementation; restrict attachment types if supported.
+  - Context links: allow hyperlinks to related documents or external references where allowed.
+- Letters, Templates, RTF
+  - Manage template library; validate template availability before merge/print.
+  - Merge fields from customer/loan context; support batch/group letters.
+  - Use TX Text Control components; ensure fonts/resources packaged.
+  - Template versioning: track last modified by/time; optional approval before publish.
+  - Output: print/PDF; store copies when policy requires; redact sensitive merge fields for external delivery.
+  - Delivery: support print-to-mail, PDF save, and optional email send if configured; capture delivery status.
+- Reports and Dashboards
+  - Parameter validation with defaults; prevent unbounded queries; timeouts aligned with SQL settings.
+  - Queue long reports; show progress and completion/failure; store output paths.
+  - Dashboards should cache/refresh on intervals; avoid blocking UI.
+  - Report catalog: document available reports (core + board), required parameters, expected runtime, output format (PDF/Excel).
+  - Access control: restrict sensitive reports (credit, compliance) by role/license.
+  - Scheduling: if ad-hoc scheduling exists, enforce per-user limits and retention of generated files.
+  - Exports: ensure CSV/Excel exports escape delimiters and preserve formatting; include generation metadata.
+- FollowUp/Tasks and Notifications
+  - Create tasks with due date, owner, status; link to customer/loan; show aging and reminders.
+  - Notification scheduler sends emails per config; retries with backoff; log delivery status; avoid duplicate sends on restart.
+  - SLA: overdue highlighting thresholds configurable; allow bulk reassignment; store completion notes.
+  - Email templates: configurable subject/body with merge fields; support test mode to non-production recipients.
+  - Channels: email primary; confirm whether in-app alerts/toasts are present; if so, log dismissal/acknowledgment.
+  - Time zones: ensure scheduled sends respect server/client time zones; store timestamps in UTC where possible.
+- Board Reports (BR) and BRSchedule/BRTestGen
+  - Connect to BR DB using separate connection; validate connectivity before run.
+  - Generate standard set (Past Due, Non-Accrual, One Obligor, etc.); allow parameters and destinations.
+  - Scheduler handles collisions, long runtimes, and output retention/rotation; log per run with success/fail reason.
+  - Output handling: versioned filenames with timestamp; option to overwrite vs retain N versions; clean-up policy.
+  - Test harness (BRTestGen): allow dry runs against staging data without impacting production outputs.
+  - Parameterization: document per-report parameters (as-of date, thresholds, product segments); validate inputs.
+  - Delivery: allow drop to file share and/or email distribution lists if configured; log recipients/paths.
+- PdfExtractorAI / OCR
+  - ABBYY OCR uses INI paths; fail gracefully when paths unavailable; log per batch.
+  - Azure Document Intelligence uses secure endpoint/key; support forms: Schedule L, E1/E2, 8825-1/2; map to internal codes; handle multi-occurrence tables.
+  - Store temp XML in controlled folder; clean up; record success/failure per file and fallback to OCR when AI fails.
+  - Error handling: classify failures (IO, auth, API quota, model errors); retry non-fatal categories; surface user-facing messages.
+  - Performance: configure parallelism limits to avoid CPU/IO saturation; cap file size/pages per job if needed.
+  - Field mappings: document mapping tables from extracted fields to Suntell codes; include handling for missing/partial fields.
+  - Security: ensure temp/output directories inherit restrictive ACLs; scrub PII from logs; purge intermediate images if created.
+- Credit Bureau
+  - License-gated; capture request/response status; mask SSNs in UI/logs; handle bureau downtime with retries/backoff.
+  - Store responses securely; avoid plaintext sensitive fields in logs.
+  - Workflow: request submission, pending status, response retrieval, parsing, and storage; user notification on completion/failure.
+  - Compliance: purge or archive responses per bureau agreement; encrypt at rest where stored.
+  - Multi-bureau support: if multiple bureaus are configured, document selection rules and credential sets.
+  - Dispute/adverse action: if supported, capture reason codes and notices; log generation/dispatch.
+- ComplianceOne
+  - Use configured IN/OUT paths; validate accessibility; ensure file naming conforms; log transfers.
+  - Handle partial or failed exchanges with retries and operator alerts.
+  - Mapping: ensure field mapping between LMS and ComplianceOne schemas is documented; validate mandatory fields before export.
+  - Versioning: track ComplianceOne interface version; validate compatibility when updating.
+  - Error recovery: queue failed transfers for reattempt; provide manual retry with validation.
+- Square1Portal
+  - License/config-gated; respect authentication/authorization; log access; handle connectivity failures.
+  - Session handling: timeout/refresh logic; error messaging for portal outages.
+  - Data scope: document what entities are exposed via portal; ensure privacy controls align with portal users.
+- Configure / Lookup
+  - Admin UI must validate paths, ports, timeouts, credentials; prevent invalid writes.
+  - Changes audited with user/time; role/license restricted.
+  - Lookup integrity: prevent deleting in-use codes; support sort order/weighting; enforce uniqueness.
+  - Bulk operations: if bulk import/edit exists, validate and log results; backup lookups before mass changes.
+- Financial Analysis (FA / FA_Conv_RMA)
+  - Provide spread templates; validate inputs; store/save analyses linked to customers/loans.
+  - Conversion utilities must validate source formats and log errors.
+  - Calculations: ratios per template definitions; document formula sources; handle divide-by-zero and missing data gracefully.
+  - Versioning: store template versions and analysis snapshots for audit.
+  - Data sources: confirm whether FA pulls from loan/customer data automatically; validate mapping accuracy.
+  - Output: allow export/print of spreads; include source/version metadata.
+- LMSImport
+  - Support dry-run if available; validate file schema; transactional import where possible; log rejects/duplicates.
+  - File formats: document accepted layouts (CSV/Excel/XML); enforce required columns and data types; checksum or row counts where applicable.
+  - Error handling: partial failures should report row-level errors; support rerun without duplicating accepted rows.
+  - Security: restrict import capability to authorized roles; validate file paths to avoid arbitrary access.
+- Controls / LAControls / Graphics
+  - Ensure custom controls load resources; degrade gracefully if missing; document required fonts/images.
+  - Compatibility: verify control versions align with referenced DLLs; avoid breaking changes when upgrading third-party controls.
+  - Accessibility: ensure controls support keyboard navigation and basic accessibility where feasible in WinForms context.
+- UDLMS_Net / Mobile TCP
+  - Listen on configured port range; validate availability; authenticate/authorize mobile connections; rate limit to protect host.
+  - Protocol: document message formats and error codes; handle connection drops gracefully; log per-connection activity.
+  - Security: if sending PII/financial data, require encryption and authentication; validate source IP ranges where possible.
+  - Monitoring: track connection counts, failures, and latency; alert on port binding failures.
+- ConfigSMTP / NotificationTester
+  - Securely store SMTP creds; test connectivity without sending to production recipients; mask passwords in logs.
+  - Settings: host/port/SSL/TLS, username/password or integrated auth, sender identity, throttling; test mode flag.
+  - Validation: send test email to designated non-production mailbox; verify STARTTLS/cert validation; log SMTP transcripts only when debug enabled and scrub credentials.
+- Util / Data / Error / ThirdPartyDLL
+  - Util: INI/app config loading, version check, feature flags; fail fast with clear errors when missing.
+  - Data: OLE DB helpers are legacy—prefer SqlClient; ensure timeouts and error handling are consistent.
+  - Error: central handler must not block background tasks; ensure Event Log/SMTP failures do not crash UI.
+  - ThirdPartyDLL: track required versions/licenses; validate presence at startup or surface actionable errors.
+  - Version check: MSI prompt uses arch-specific path (`MSI\\x64` or `MSI\\x86`); ensure both exist or conditionally suppress prompt.
+- Logging: standardize log format (timestamp, user, host, module, correlation id where available); cap log size and rotate.
+- Users / Security Admin
+  - Manage user records, roles, and permissions; tie to Windows/SQL auth where applicable.
+  - Assign rights to modules (Customers, Loans, DT, Reports, Configure, etc.); enforce least privilege.
+  - Track user status (active/disabled), last login, and license consumption if applicable.
+  - Audit: record user creation/updates/role changes with user/time; prevent deletion without history.
+- CustomTemplates
+  - Manage custom UI/report templates beyond letters; validate file types/locations; store metadata (author, version, date).
+  - Enforce access control for editing/publishing; provide preview; handle missing resources gracefully.
+- Dashboards (expanded)
+  - Define dashboard tiles/cards with KPIs (counts of loans by status, DT aging, follow-ups, exceptions).
+  - Data freshness: cache and refresh on configurable interval; avoid blocking UI.
+  - Filters: by date range, product, owner; persist user-selected filters where applicable.
+  - Performance: cap query runtimes; index key fields; paginate/drill-down for large result sets.
+- Notification service (expanded)
+  - Scheduler cadence configurable (cron/interval); jobs persisted to avoid duplicate sends after restart.
+  - Templates for subjects/bodies with merge fields; test mode to safe recipients; support HTML/text.
+  - Retry/backoff with max attempts; classify failures (SMTP auth, DNS, connection, recipient); log outcomes.
+  - Security: store SMTP creds securely; support SSL/TLS/STARTTLS; validate certificates where required.
+  - Monitoring: expose last run, next run, failure count; alert on consecutive failures.
+
+## 24. Expanded Priority Modules (~50 lines each)
+- Loans and Collateral (expanded)
+  - Core fields: loan number, product/type, purpose, term (months), rate type (fixed/variable), rate, spread/index, amortization, payment frequency, first payment date, maturity date.
+  - Status: draft/in review/approved/boarded/locked; capture user/time per transition; prevent edits when locked except by authorized override.
+  - Risk: risk rating, review date, reviewer, comments; covenant compliance status; exception flags.
+  - Amounts: commitment, funded, outstanding, accrual flags; validate numeric ranges; enforce currency formatting.
+  - Fees: origination, closing, other fees; accrual rules; tie to disclosures if tracked.
+  - Collateral linkage: multiple collateral items per loan; one collateral can secure multiple loans; enforce coverage rules (LTV thresholds configurable).
+  - Collateral detail: type (RE/UCC/vehicle/securities), description, owner, lien position, filing info, appraisal value, appraisal date, appraiser, expiration, insurance data.
+  - Calculations: LTV (by collateral and aggregated), DSCR where income is provided, payment calc per amortization; round consistently; guard against divide-by-zero.
+  - Narratives/presentation: sections for strengths/weaknesses/mitigants; attach documents; support export to PDF.
+  - Covenants: define covenants, due dates, test frequency, result (pass/fail), notes, attached evidence; show overdue.
+  - Renewals/modifications: track prior terms, effective dates, new terms; retain history/audit.
+  - Relationships: show related parties/customers/guarantors if present; link to FollowUps and Notes.
+  - Validation: required fields by product; effective dates not in past/future beyond policy; rate/term bounds; unique loan number.
+  - Security/privacy: mask TIN/SSN fields; restrict access to sensitive fields by role.
+  - Error handling: fail gracefully on missing collateral paths/resources; log with user/context.
+  - Reporting: expose fields for reports and dashboards; ensure indexes on loan number, customer id, status, product.
+- Documentation Tracking (expanded)
+  - Setup: doc requirement templates by product/loan type; auto-assign on loan/customer creation.
+  - Fields: doc item id, name/description, required/optional, due date, assigned user/role, status (open/pending/received/waived/expired), received date, waiver reason, notes.
+  - Criteria: conditional requirements (e.g., collateral type, loan amount thresholds); apply rules at creation.
+  - Assignment: assign/reassign with audit (user/time/reason); bulk reassignment allowed with confirmation.
+  - Aging: compute days open/overdue; display buckets (0-30/31-60/61-90/>90); configurable.
+  - Enforcement: block key workflow steps (approval/boarding) when critical docs missing unless waived; require waiver reason.
+  - Evidence: store file path/reference to received document; ensure path access; optional checksum.
+  - Notifications: follow-up reminders to assigned user on approaching/overdue due dates; configurable cadence.
+  - Dashboards: counts by status, product, owner, aging; filters for open/closed/waived.
+  - Bulk actions: bulk close/waive with reason; undo/rollback limited to authorized roles.
+  - Validation: due date cannot precede creation; required flag respected; status transitions must be valid (e.g., cannot waive closed).
+  - Audit: capture create/update/close/waive events with user/time/reason.
+  - Security: limit visibility by role/product if needed; avoid exposing PII in list views.
+  - Error handling: handle missing doc paths; log access errors; do not block UI on IO failures.
+  - Imports: if doc items import is used, validate schema and avoid duplicates.
+- Board Reports and Scheduler (expanded)
+  - Reports: Past Due, Non-Accrual, One Obligor, policy-defined board set; list parameters (as-of date, days past due thresholds, segments).
+  - Data source: separate BR DB connection; validate connectivity and credentials before run.
+  - Scheduling: Windows service (BRSchedule) runs configured schedules; avoid overlapping runs; queue or skip per policy.
+  - Parameters: allow per-report parameters in schedule definition; validate before saving.
+  - Output: file share output with versioned filenames (timestamp); configurable overwrite vs retain N copies; optional email distribution.
+  - Logging: per-run log with start/end time, parameters, success/failure, output path, error details.
+  - Recovery: on service restart, avoid re-running completed jobs; optionally resume failed jobs; configurable retry with backoff.
+  - Performance: set timeouts; prevent long-running queries from blocking subsequent jobs; optionally run reports sequentially.
+  - Security: protect BR DB credentials; limit access to BR output shares; do not email to unauthorized recipients.
+  - Admin: configuration UI (if present) should validate schedule cron/time, paths, permissions; restrict to admins.
+  - Test harness: BRTestGen supports dry-runs against staging; ensure it cannot write to production shares.
+  - Monitoring: expose last run status, next run, failure count; alert on consecutive failures.
+  - Versioning: document BR DB schema version compatibility; flag mismatch.
+- PdfExtractorAI / OCR (expanded)
+  - Inputs: PDF for tax forms (Schedules L, E1/E2, 8825-1/2); ABBYY OCR inputs via configured folders.
+  - Azure Document Intelligence: endpoint/key from secure store; model version pinned if applicable.
+  - Processing: per-file pipeline—validate file type/size; send to AI; parse result; map fields to internal codes; produce XML.
+  - Mappings: maintain mapping table for each form: field id -> internal code; handle missing fields with defaults/nulls.
+  - Multiplicity: support multi-occurrence tables (e.g., rentals); index occurrences; include page numbers.
+  - Fallback: on AI failure, route to ABBYY OCR; mark source used in output metadata.
+  - Temp files: store temp images/XML in secured directory; purge after processing or on schedule.
+  - Error taxonomy: auth failure, quota exceeded, malformed PDF, mapping error, IO failure; retry non-fatal where safe.
+  - Performance: limit parallel jobs; set max pages/size; log duration per stage.
+  - Output: XML stored to configured path; include metadata (source, model, timestamp, user/machine).
+  - Security: scrub PII from logs; ensure output paths have restricted ACLs; encrypt key at rest.
+  - Monitoring: count success/fail per batch; alert on spikes in failures; log correlation id for API calls.
+  - UI integration: show progress/status to user; provide actionable error messages; allow re-run with same file.
+- Credit Bureau (expanded)
+  - Workflow: select bureau (if multiple), compose request (customer identity, loan context), submit, track status (pending/complete/failed).
+  - Responses: store raw response securely; parse summary metrics; display masked data in UI.
+  - Status: show request time, response time, bureau reference id; allow manual refresh/retry on failures.
+  - Error handling: handle bureau downtime/timeouts; retry with backoff; user-facing messaging without exposing sensitive data.
+  - Compliance: mask SSN/TIN in UI/logs; encrypt stored responses; apply retention policy per bureau agreement.
+  - Adverse action/dispute: if supported, capture codes/reasons; generate required notices; log delivery.
+  - Licensing: enforce product flag before enabling UI or sending requests.
+  - Audit: log who initiated, parameters sent (non-sensitive), and outcome; include correlation id if available.
+  - Performance: set request timeout; avoid blocking UI—use background worker; show spinner/status.
+  - Exports: if responses can be exported, ensure redaction/masking and authorized access only.
+  - Configuration: bureau endpoints/credentials stored securely; test mode to non-production endpoints.
+- Configure / Lookup (expanded)
+  - Lookups: maintain code tables (status codes, product types, risk ratings, regions); enforce uniqueness and sort order; prevent deletion if in use.
+  - Bulk update: if bulk import/export exists, require validation, preview of changes, and backup before apply.
+  - Configuration screens: edit paths (OCR, ComplianceOne, BACKEND), timeouts, ports, feature flags, SMTP settings; validate existence/format.
+  - Licensing flags: map PassNet product types to feature toggles; show read-only state if unlicensed.
+  - Security: restrict access to admins; audit changes with user/time/old/new values.
+  - Validation: test connectivity for paths (UNC), SMTP, SQL, and BR DB before saving; warn on invalid entries.
+  - Versioning: surface app version, DB version, BR DB version; provide “check update” and show MSI path.
+  - Backup: recommend exporting config/lookup before major changes; provide restore flow if available.
+  - Error handling: fail fast on invalid writes; show actionable messages; do not leave partial state.
+
+## 25. Solution Module Coverage Checklist
+- Confirmed modules reflected: Main shell/MDI, Util, Data, Error, Customers, Loans, Collateral, Deposits, Documentation Tracking, Notes, Memos, Letters/RTF, Reports, Dashboards, FollowUp/Tasks, Configure, Lookup, FA/FA_Conv_RMA, CustomTemplates, Controls/LAControls/Graphics, PassNet licensing, LMSImport, ConfigSMTP, Notification/NotificationTester, BR/BRTestGen/BRSchedule, Credit Bureau/CBRequest, PdfExtractorAI, ABBYY OCR, Square1Portal, UDLMS_Net/mobile TCP, ThirdPartyDLL resources.
+- Shared assets/dependencies: ComponentOne controls/reports, TX Text Control, GrapeCity/FarPoint Spread, FontAwesome.Sharp, ABBYY FineReader Server, Azure Document Intelligence, INI/app.config, MSI update flow, service installers.
+- Environment specifics: INI chain (`ST.Main.INI` -> `Suntell.ini` -> BACKEND), MSI locations (`MSI\\x64`/`MSI\\x86`), OCR/ComplianceOne paths, TCP port range, BR DB connection, SMTP config.
+- Cross-cutting enforcement: licensing/feature gating, version check and MSI prompt, secure secret handling, SQL connectivity/encryption guidance, logging/error handling, background workers for long tasks.
+- If new modules/services are added, extend this document with fields, workflows, validations, security, performance, error handling, audit, and integration points for each.
